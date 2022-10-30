@@ -1,9 +1,21 @@
 export function setProps(dom, oldProps, newProps) {
   for (let key in oldProps) {
+    if (key !== 'children') {
+      // 新的有，更新
+      if (newProps.hasOwnProperty(key)) {
+        setProp(dom, key, newProps[key])
+      } else {
+        // 新的没有，移除
+        dom.removeAttribute(key)
+      }
+    }
   }
   for (let key in newProps) {
     if (key !== 'children') {
-      setProp(dom, key, newProps[key])
+      // 老的没有，更新
+      if (!oldProps.hasOwnProperty(key)) {
+        setProp(dom, key, newProps[key])
+      }
     }
   }
 }

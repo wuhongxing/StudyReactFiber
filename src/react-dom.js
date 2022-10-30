@@ -1,5 +1,5 @@
 import { TAG_ROOT } from './constants'
-import scheduleRoot from './scheduleRoot'
+import { scheduleRoot } from './scheduleRoot'
 // container: root dom 节点
 function render(element, container) {
   const rootFiber = {

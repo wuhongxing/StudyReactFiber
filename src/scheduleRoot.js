@@ -2,20 +2,35 @@
 // 两个阶段
 // 1. diff/render 阶段，对比新旧的虚拟 DOM，进行增量更新或创建，render 阶段
 // 这个阶段可能比较花时间，可以对我们的任务进行拆分，此阶段可以暂停
-// render 阶段有两个任务: 1. 根据虚拟 DOM 生成 fiber 树 2. 收集 effectList
-// 2. commit 阶段，进行真实 DOM 的创建更新，此阶段不能暂停
+// render 阶段有两个任务: 1. 根据虚拟 DOM 生成 fiber 树（也会创建真实的 stateNode） 2. 收集 effectList
+// 2. commit 阶段，根据收集到的 effectList 进行真实 DOM 的挂载，此阶段不能暂停
 
-import { ELEMENT_TEXT, PLACEMENT, TAG_HOST, TAG_ROOT, TAG_TEXT } from "./constants"
-import { setProps, sleep } from "./utils"
+import { DELETION, ELEMENT_TEXT, PLACEMENT, TAG_HOST, TAG_ROOT, TAG_TEXT, UPDATE } from "./constants"
+import { setProps } from "./utils"
 
 // 下一个工作单元
 let nextUnitOfWork = null
 // RootFiber 应用的根
 let workInProgressRoot = null
+// 当前界面树f
+let currentRoot = null
+// 删除的节点并不放在 effect list 里，所以需要单独记录
+let deletions = []
+export function scheduleRoot(rootFiber) {
+  if (currentRoot && currentRoot.alternate) { // 第二次及之后的更新
+    workInProgressRoot = currentRoot.alternate
+    workInProgressRoot.props = rootFiber.props
+    workInProgressRoot.alternate = currentRoot
+  } else if (currentRoot) { // 第一次更新
+    rootFiber.alternate = currentRoot
+    workInProgressRoot = rootFiber
+  } else { // 初次渲染
+    workInProgressRoot = rootFiber
+  }
 
-function scheduleRoot(rootFiber) {
-  workInProgressRoot = rootFiber
-  nextUnitOfWork = rootFiber
+  workInProgressRoot.firstEffect = workInProgressRoot.lastEffect = workInProgressRoot.nextEffect = null
+  nextUnitOfWork = workInProgressRoot
+  requestIdleCallback(workLoop, { timeout: 500 })
 }
 
 function workLoop(deadline) {
@@ -29,7 +44,7 @@ function workLoop(deadline) {
     requestIdleCallback(workLoop, { timeout: 500 })
   }
   if (!nextUnitOfWork && workInProgressRoot) {
-    console.log('render 阶段结束')
+    console.log('render 阶段结束，开始提交')
     commitRoot()
   }
 }
@@ -56,7 +71,7 @@ function beginWork(currentFiber) {
     // 仅创建 stateNode
     updateHostText(currentFiber)
   } else if (currentFiber.tag === TAG_HOST) {
-    // 创建 stateNode，并调和 children
+    // 创建 stateNode，并调和
     updateHost(currentFiber)
   }
 }
@@ -65,8 +80,8 @@ function beginWork(currentFiber) {
 // TODO: 这个是难点
 // 每个 fiber 有两个属性，firstEffect 指向第一个有副作用的子 fiber，last effect 指向最后一个有副作用的子 fiber
 // 中间用 nextEffect 做成一个单链表
+// 这里会使用 firstEffect 和 lastEffect 把一个树变成一个单链表
 function completeUnitOfWork(currentFiber) {
-  console.log(currentFiber)
   let returnFiber = currentFiber.return
   if (returnFiber) {
     // 把自己儿子的 effect 链挂到父亲身上
@@ -132,23 +147,51 @@ function updateDOM(stateNode, oldProps, newProps) {
 // newChildren 就是一个虚拟 DOM 数组，协调的时候会转成 fiber 节点
 function reconclieChildren(currentFiber, newChildren) {
   let newChildIndex = 0 // 新子节点的索引
+  // 如果当前 currentFiber 有 alternate 并且 alternate 有 child 属性
+  let oldFiber = currentFiber.alternate && currentFiber.alternate.child
   let prevSibling // 上一个新的子fiber
-  while (newChildIndex < newChildren.length) {
+  // 保证新旧一次遍历完
+  while (newChildIndex < newChildren.length || oldFiber) {
     const newChild = newChildren[newChildIndex] // 取出元素节点
+    const sameType = oldFiber && newChild && oldFiber.type === newChild.type
     let tag
-    if (newChild.type === ELEMENT_TEXT) {
+    if (newChild && newChild.type === ELEMENT_TEXT) {
       tag = TAG_TEXT // 文本结点
-    } else if (typeof newChild.type === 'string') {
+    } else if (newChild && typeof newChild.type === 'string') {
       tag = TAG_HOST // 原生 DOM 节点
     }
-    let newFiber = {
-      tag,
-      type: newChild.type,
-      props: newChild.props,
-      stateNode: null,
-      return: currentFiber,
-      effectTag: PLACEMENT,
-      nextEffect: null // effact list 也是一个单链表，顺序和完成顺序是一样的
+    // 可以复用老节点，更新即可
+    let newFiber;
+    if (sameType) {
+      newFiber = {
+        tag: oldFiber.tag,
+        type: oldFiber.type,
+        props: newChild.props,
+        stateNode: oldFiber.stateNode,
+        return: currentFiber,
+        alternate: oldFiber,
+        effectTag: UPDATE,
+        nextEffect: null // effact list 也是一个单链表，顺序和完成顺序是一样的
+      }
+    } else {
+      if (newChild) {
+        newFiber = {
+          tag,
+          type: newChild.type,
+          props: newChild.props,
+          stateNode: null,
+          return: currentFiber,
+          effectTag: PLACEMENT,
+          nextEffect: null // effact list 也是一个单链表，顺序和完成顺序是一样的
+        }
+      }
+      if (oldFiber) {
+        oldFiber.effectTag = DELETION
+        deletions.push(oldFiber)
+      }
+    }
+    if (oldFiber) {
+      oldFiber = oldFiber.sibling
     }
     if (newFiber) {
       if (newChildIndex === 0) {
@@ -162,12 +205,18 @@ function reconclieChildren(currentFiber, newChildren) {
   }
 }
 
+
 function commitRoot() {
+  deletions.forEach(commitWork)
+
   let currentFiber = workInProgressRoot.firstEffect
   while (currentFiber) {
     commitWork(currentFiber)
     currentFiber = currentFiber.nextEffect
   }
+  // 提交之后要清空 deletion 数组
+  deletions.length = 0
+  currentRoot = workInProgressRoot
   workInProgressRoot = null
 }
 
@@ -175,12 +224,21 @@ function commitWork(currentFiber) {
   if (!currentFiber) return
   let returnFiber = currentFiber.return
   let returnDOM = returnFiber.stateNode
+  // 新增节点
   if (currentFiber.effectTag === PLACEMENT) {
     returnDOM.appendChild(currentFiber.stateNode)
+  } else if (currentFiber.effectTag === DELETION) {
+    returnDOM.removeChild(currentFiber.stateNode)
+  } else if (currentFiber.effectTag === UPDATE) {
+    if (currentFiber.tag === TAG_TEXT) {
+      if (currentFiber.alternate.props.text !== currentFiber.props.text) {
+        currentFiber.stateNode.textContent = currentFiber.props.text
+      }
+    } else {
+      updateDOM(currentFiber.stateNode, currentFiber.alternate.props, currentFiber.props)
+    }
   }
   currentFiber.effectTag = null
 }
 
-requestIdleCallback(workLoop, { timeout: 500 })
-
-export default scheduleRoot
+// requestIdleCallback(workLoop, { timeout: 500 })
