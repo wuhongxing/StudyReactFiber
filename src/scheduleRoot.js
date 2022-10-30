@@ -163,15 +163,23 @@ function reconclieChildren(currentFiber, newChildren) {
     // 可以复用老节点，更新即可
     let newFiber;
     if (sameType) {
-      newFiber = {
-        tag: oldFiber.tag,
-        type: oldFiber.type,
-        props: newChild.props,
-        stateNode: oldFiber.stateNode,
-        return: currentFiber,
-        alternate: oldFiber,
-        effectTag: UPDATE,
-        nextEffect: null // effact list 也是一个单链表，顺序和完成顺序是一样的
+      if (oldFiber.alternate) {
+        newFiber = oldFiber.alternate // 如果有上上次的 fiber，就拿过来，作为这次的 fiber
+        newFiber.props = newChild.props
+        newFiber.alternate = oldFiber
+        newFiber.effectTag = UPDATE
+        newFiber.nextEffect = null
+      } else {
+        newFiber = {
+          tag: oldFiber.tag,
+          type: oldFiber.type,
+          props: newChild.props,
+          stateNode: oldFiber.stateNode,
+          return: currentFiber,
+          alternate: oldFiber,
+          effectTag: UPDATE,
+          nextEffect: null // effact list 也是一个单链表，顺序和完成顺序是一样的
+        }
       }
     } else {
       if (newChild) {
