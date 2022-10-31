@@ -1,84 +1,43 @@
-import React from './react';
-// import ReactDOM  from 'react-dom/client';
-import ReactDOM from './react-dom';
+import React from './react'
+import ReactDOM from './react-dom'
 
-const style = {
-  border: '3px solid red',
-  margin: '5px'
+class ClassCounter extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { number: 0 }
+  }
+  onClick = () => {
+    this.setState(state => {
+      return { number: state.number + 1 }
+    })
+  }
+  render() {
+    return React.createElement("div", {
+      id: "counter"
+    }, /*#__PURE__*/React.createElement("span", null, this.state.number), /*#__PURE__*/React.createElement("button", {
+      onClick: this.onClick
+    }, "\u52A01"));
+  }
 }
 
-// const element = (
-//   <div id="A1" style={style}>
-//     A1 new
-//     <div id="B1" style={style}>
-//       B1 new
-//       <div id="C1" style={style}>C1 new</div>
-//       <div id="C2" style={style}>C2 new</div>
-//     </div>
-//     <div id="B2" style={style}>B2 new</div>
-//     <div id="B3" style={style}>B3 new</div>
-//   </div>
-// )
+const ADD = 'ADD'
+function reducer(state, action) {
+  switch (action.type) {
+    case ADD:
+      return { count: state.count + 1}
+    default:
+      return state
+  }
+}
 
-const element = /*#__PURE__*/React.createElement("div", {
-  id: "A1",
-  style: style
-}, "A1", /*#__PURE__*/React.createElement("div", {
-  id: "B1",
-  style: style
-}, "B1", /*#__PURE__*/React.createElement("div", {
-  id: "C1",
-  style: style
-}, "C1"), /*#__PURE__*/React.createElement("div", {
-  id: "C2",
-  style: style
-}, "C2")), /*#__PURE__*/React.createElement("div", {
-  id: "B2",
-  style: style
-}, "B2"));
+function FunctionCounter() {
+  const [countState, dispatch] = React.useReducer(reducer, { count: 0 })
+  return React.createElement("div", {
+    id: "counter"
+  }, /*#__PURE__*/React.createElement("span", null, countState.count), /*#__PURE__*/React.createElement("button", {
+    onClick: () => dispatch('ADD')
+  }, "\u52A01"));
+}
 
-// const root = ReactDOM.createRoot(document.getElementById('root'))
-// root.render(element)
-ReactDOM.render(element, document.getElementById('root'))
-
-const render2 = document.getElementById('render2')
-render2.addEventListener('click', () => {
-  const element2 = /*#__PURE__*/React.createElement("div", {
-    id: "A1",
-    style: style
-  }, "A1 new", /*#__PURE__*/React.createElement("div", {
-    id: "B1",
-    style: style
-  }, "B1 new", /*#__PURE__*/React.createElement("div", {
-    id: "C1",
-    style: style
-  }, "C1 new"), /*#__PURE__*/React.createElement("div", {
-    id: "C2",
-    style: style
-  }, "C2 new")), /*#__PURE__*/React.createElement("div", {
-    id: "B2",
-    style: style
-  }, "B2 new"), /*#__PURE__*/React.createElement("div", {
-    id: "B3",
-    style: style
-  }, "B3 new"));
-  ReactDOM.render(element2, document.getElementById('root'))
-})
-
-const render3 = document.getElementById('render3')
-render3.addEventListener('click', () => {
-  const element3 = /*#__PURE__*/React.createElement("div", {
-    id: "A1",
-    style: style
-  }, "A1 --", /*#__PURE__*/React.createElement("div", {
-    id: "B1",
-    style: style
-  }, "B1 --", /*#__PURE__*/React.createElement("div", {
-    id: "C1",
-    style: style
-  }, "C1 --"), /*#__PURE__*/React.createElement("div", {
-    id: "C2",
-    style: style
-  }, "C2")));
-  ReactDOM.render(element3, document.getElementById('root'))
-})
+// ReactDOM.render(<ClassCounter />, document.getElementById('root'))
+ReactDOM.render(<FunctionCounter />, document.getElementById('root'))

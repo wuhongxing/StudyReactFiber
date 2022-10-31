@@ -5,7 +5,8 @@
 // render 阶段有两个任务: 1. 根据虚拟 DOM 生成 fiber 树（也会创建真实的 stateNode） 2. 收集 effectList
 // 2. commit 阶段，根据收集到的 effectList 进行真实 DOM 的挂载，此阶段不能暂停
 
-import { DELETION, ELEMENT_TEXT, PLACEMENT, TAG_HOST, TAG_ROOT, TAG_TEXT, UPDATE } from "./constants"
+import { DELETION, ELEMENT_TEXT, PLACEMENT, TAG_CLASS, TAG_FUNCTION, TAG_HOST, TAG_ROOT, TAG_TEXT, UPDATE } from "./constants"
+import { UpdateQueue } from "./UpdateQueue"
 import { setProps } from "./utils"
 
 // 下一个工作单元
@@ -19,11 +20,20 @@ let deletions = []
 export function scheduleRoot(rootFiber) {
   if (currentRoot && currentRoot.alternate) { // 第二次及之后的更新
     workInProgressRoot = currentRoot.alternate
-    workInProgressRoot.props = rootFiber.props
     workInProgressRoot.alternate = currentRoot
+    if (rootFiber) {
+      workInProgressRoot.props = rootFiber.props
+    }
   } else if (currentRoot) { // 第一次更新
-    rootFiber.alternate = currentRoot
-    workInProgressRoot = rootFiber
+    if (rootFiber) {
+      rootFiber.alternate = currentRoot
+      workInProgressRoot = rootFiber
+    } else {
+      workInProgressRoot = {
+        ...currentRoot,
+        alternate: currentRoot
+      }
+    }
   } else { // 初次渲染
     workInProgressRoot = rootFiber
   }
@@ -51,6 +61,7 @@ function workLoop(deadline) {
 
 function performUnitOfWork(currentFiber) {
   beginWork(currentFiber)
+  console.log(currentFiber.tag)
   if (currentFiber.child) {
     return currentFiber.child
   }
@@ -64,16 +75,40 @@ function performUnitOfWork(currentFiber) {
 }
 
 function beginWork(currentFiber) {
-  if (currentFiber.tag === TAG_ROOT) {
+  if (currentFiber.tag === TAG_ROOT) { // 根 fiber
     // 仅调和
     updateHostRoot(currentFiber)
-  } else if (currentFiber.tag === TAG_TEXT) {
+  } else if (currentFiber.tag === TAG_TEXT) { // 文本 fiber
     // 仅创建 stateNode
     updateHostText(currentFiber)
-  } else if (currentFiber.tag === TAG_HOST) {
+  } else if (currentFiber.tag === TAG_HOST) { // 原生DOM fiber
     // 创建 stateNode，并调和
     updateHost(currentFiber)
+  } else if (currentFiber.tag === TAG_CLASS) {
+    // stateNode 为 class 实例
+    updateClassComponent(currentFiber)
+  } else if (currentFiber.tag === TAG_FUNCTION) {
+    // stateNode 为执行后结果
+    updateFunctionComponent(currentFiber)
   }
+}
+
+function updateFunctionComponent(currentFiber) {
+  const newElement = [currentFiber.type(currentFiber.props)]
+  reconclieChildren(currentFiber, newElement)
+}
+
+function updateClassComponent(currentFiber) {
+  if (!currentFiber.stateNode) { // 类组件 stateNode 组件的实例
+    currentFiber.stateNode = new currentFiber.type(currentFiber.props)
+    currentFiber.stateNode.internalFiber = currentFiber
+    currentFiber.updateQueue = new UpdateQueue()
+  }
+  // 给组件的实例的 state 赋值
+  currentFiber.stateNode.state = currentFiber.updateQueue.forceUpdate(currentFiber.stateNode.state)
+  const newElement = currentFiber.stateNode.render()
+  const newChildren = [newElement]
+  reconclieChildren(currentFiber, newChildren)
 }
 
 // 在完成的时候要收集有副作用的 fiber，然后组成 effect list
@@ -141,7 +176,9 @@ function createDOM(currentFiber) {
 }
 
 function updateDOM(stateNode, oldProps, newProps) {
-  setProps(stateNode, oldProps, newProps)
+  if (stateNode.setAttribute) {
+    setProps(stateNode, oldProps, newProps)
+  }
 }
 
 // newChildren 就是一个虚拟 DOM 数组，协调的时候会转成 fiber 节点
@@ -149,13 +186,19 @@ function reconclieChildren(currentFiber, newChildren) {
   let newChildIndex = 0 // 新子节点的索引
   // 如果当前 currentFiber 有 alternate 并且 alternate 有 child 属性
   let oldFiber = currentFiber.alternate && currentFiber.alternate.child
+  oldFiber && (oldFiber.firstEffect = oldFiber.lastEffect = oldFiber.nextEffect = null)
   let prevSibling // 上一个新的子fiber
   // 保证新旧一次遍历完
   while (newChildIndex < newChildren.length || oldFiber) {
     const newChild = newChildren[newChildIndex] // 取出元素节点
     const sameType = oldFiber && newChild && oldFiber.type === newChild.type
     let tag
-    if (newChild && newChild.type === ELEMENT_TEXT) {
+    if (newChild && typeof newChild.type === 'function' && newChild.type.prototype.isReactComponent) {
+      tag = TAG_CLASS
+    } else if (newChild && typeof newChild.type === 'function') {
+      tag = TAG_FUNCTION
+      console.log('进这个')
+    } else if (newChild && newChild.type === ELEMENT_TEXT) {
       tag = TAG_TEXT // 文本结点
     } else if (newChild && typeof newChild.type === 'string') {
       tag = TAG_HOST // 原生 DOM 节点
@@ -168,6 +211,7 @@ function reconclieChildren(currentFiber, newChildren) {
         newFiber.props = newChild.props
         newFiber.alternate = oldFiber
         newFiber.effectTag = UPDATE
+        newFiber.updateQueue = oldFiber.updateQueue || new UpdateQueue()
         newFiber.nextEffect = null
       } else {
         newFiber = {
@@ -178,6 +222,7 @@ function reconclieChildren(currentFiber, newChildren) {
           return: currentFiber,
           alternate: oldFiber,
           effectTag: UPDATE,
+          updateQueue: oldFiber.updateQueue || new UpdateQueue(),
           nextEffect: null // effact list 也是一个单链表，顺序和完成顺序是一样的
         }
       }
@@ -190,6 +235,7 @@ function reconclieChildren(currentFiber, newChildren) {
           stateNode: null,
           return: currentFiber,
           effectTag: PLACEMENT,
+          updateQueue: new UpdateQueue(),
           nextEffect: null // effact list 也是一个单链表，顺序和完成顺序是一样的
         }
       }
@@ -231,12 +277,21 @@ function commitRoot() {
 function commitWork(currentFiber) {
   if (!currentFiber) return
   let returnFiber = currentFiber.return
+  while (returnFiber.tag !== TAG_HOST && returnFiber.tag !== TAG_ROOT && returnFiber.tag !== TAG_TEXT) {
+    returnFiber = returnFiber.return
+  }
   let returnDOM = returnFiber.stateNode
   // 新增节点
   if (currentFiber.effectTag === PLACEMENT) {
-    returnDOM.appendChild(currentFiber.stateNode)
+    let nextFiber = currentFiber
+    // if (currentFiber.tag === TAG_CLASS) { return }
+    while (nextFiber.tag !== TAG_HOST && nextFiber.tag !== TAG_TEXT) {
+      nextFiber = currentFiber.child
+    }
+    returnDOM.appendChild(nextFiber.stateNode)
   } else if (currentFiber.effectTag === DELETION) {
-    returnDOM.removeChild(currentFiber.stateNode)
+    return commitDeletions(currentFiber, returnDOM)
+    // returnDOM.removeChild(currentFiber.stateNode)
   } else if (currentFiber.effectTag === UPDATE) {
     if (currentFiber.tag === TAG_TEXT) {
       if (currentFiber.alternate.props.text !== currentFiber.props.text) {
@@ -247,6 +302,14 @@ function commitWork(currentFiber) {
     }
   }
   currentFiber.effectTag = null
+}
+
+function commitDeletions(currentFiber, returnDOM) {
+  if (currentFiber.tag === TAG_HOST && currentFiber.tag === TAG_TEXT) {
+    returnDOM.removeChild(currentFiber.stateNode)
+  } else {
+    commitDeletions(currentFiber.child, returnDOM)
+  }
 }
 
 // requestIdleCallback(workLoop, { timeout: 500 })
