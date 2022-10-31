@@ -22,7 +22,7 @@ class ClassCounter extends React.Component {
 
 const ADD = 'ADD'
 function reducer(state, action) {
-  switch (action.type) {
+  switch (action) {
     case ADD:
       return { count: state.count + 1}
     default:
@@ -35,7 +35,7 @@ function FunctionCounter() {
   return React.createElement("div", {
     id: "counter"
   }, /*#__PURE__*/React.createElement("span", null, countState.count), /*#__PURE__*/React.createElement("button", {
-    onClick: () => dispatch('ADD')
+    onClick: () => dispatch(ADD)
   }, "\u52A01"));
 }
 

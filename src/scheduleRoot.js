@@ -6,7 +6,7 @@
 // 2. commit 阶段，根据收集到的 effectList 进行真实 DOM 的挂载，此阶段不能暂停
 
 import { DELETION, ELEMENT_TEXT, PLACEMENT, TAG_CLASS, TAG_FUNCTION, TAG_HOST, TAG_ROOT, TAG_TEXT, UPDATE } from "./constants"
-import { UpdateQueue } from "./UpdateQueue"
+import { Update, UpdateQueue } from "./UpdateQueue"
 import { setProps } from "./utils"
 
 // 下一个工作单元
@@ -17,6 +17,8 @@ let workInProgressRoot = null
 let currentRoot = null
 // 删除的节点并不放在 effect list 里，所以需要单独记录
 let deletions = []
+let workInProgressFiber = null
+let hookIndex = 0
 export function scheduleRoot(rootFiber) {
   if (currentRoot && currentRoot.alternate) { // 第二次及之后的更新
     workInProgressRoot = currentRoot.alternate
@@ -61,7 +63,6 @@ function workLoop(deadline) {
 
 function performUnitOfWork(currentFiber) {
   beginWork(currentFiber)
-  console.log(currentFiber.tag)
   if (currentFiber.child) {
     return currentFiber.child
   }
@@ -94,6 +95,9 @@ function beginWork(currentFiber) {
 }
 
 function updateFunctionComponent(currentFiber) {
+  workInProgressFiber = currentFiber
+  hookIndex = 0
+  workInProgressFiber.hooks = []
   const newElement = [currentFiber.type(currentFiber.props)]
   reconclieChildren(currentFiber, newElement)
 }
@@ -176,7 +180,7 @@ function createDOM(currentFiber) {
 }
 
 function updateDOM(stateNode, oldProps, newProps) {
-  if (stateNode.setAttribute) {
+  if (stateNode && stateNode.setAttribute) {
     setProps(stateNode, oldProps, newProps)
   }
 }
@@ -197,7 +201,6 @@ function reconclieChildren(currentFiber, newChildren) {
       tag = TAG_CLASS
     } else if (newChild && typeof newChild.type === 'function') {
       tag = TAG_FUNCTION
-      console.log('进这个')
     } else if (newChild && newChild.type === ELEMENT_TEXT) {
       tag = TAG_TEXT // 文本结点
     } else if (newChild && typeof newChild.type === 'string') {
@@ -310,6 +313,28 @@ function commitDeletions(currentFiber, returnDOM) {
   } else {
     commitDeletions(currentFiber.child, returnDOM)
   }
+}
+
+export function useReducer(reducer, initialState) {
+  let newHook = workInProgressFiber.alternate && workInProgressFiber.alternate.hooks
+  && workInProgressFiber.alternate.hooks[hookIndex]
+  if (newHook) {
+    newHook.state = newHook.updateQueue.forceUpdate(newHook.state)
+  } else {
+    newHook = {
+      state: initialState,
+      updateQueue: new UpdateQueue()
+    }
+  }
+
+  const dispatch = action => {
+    let payload = reducer ? reducer(newHook.state, action) : action
+    newHook.updateQueue.enqueueUpdate(new Update(payload))
+    scheduleRoot()
+  }
+
+  workInProgressFiber.hooks[hookIndex++] = newHook
+  return [newHook.state, dispatch]
 }
 
 // requestIdleCallback(workLoop, { timeout: 500 })
