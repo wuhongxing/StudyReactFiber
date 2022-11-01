@@ -337,4 +337,8 @@ export function useReducer(reducer, initialState) {
   return [newHook.state, dispatch]
 }
 
+export function useState(initialState) {
+  return useReducer(null, initialState)
+}
+
 // requestIdleCallback(workLoop, { timeout: 500 })

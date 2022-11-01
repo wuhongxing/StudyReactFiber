@@ -1,5 +1,5 @@
 import { ELEMENT_TEXT } from "./constants"
-import { scheduleRoot, useReducer } from "./scheduleRoot"
+import { scheduleRoot, useReducer, useState } from "./scheduleRoot"
 import { Update, UpdateQueue } from "./UpdateQueue"
 // 创建元素(虚拟 DOM)
 // type 类型 div span ...
@@ -40,7 +40,8 @@ Component.prototype.isReactComponent = {} // 类组件
 const React = {
   createElement,
   Component,
-  useReducer
+  useReducer,
+  useState
 }
 
 export default React
