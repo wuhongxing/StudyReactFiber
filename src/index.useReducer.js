@@ -54,6 +54,7 @@ function reducer(state, action) {
 
 function Counter() {
   const [state, setState] = useState(10)
+  console.log(state)
   const [state1, dispatch] = useReducer(reducer, 20)
   const memoTest = useMemo(() => {
     console.log('state 发生改变了，重新计算')
